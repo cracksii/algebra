@@ -5,6 +5,6 @@ def watch(a, *args):
     def wrapper(*args, **kwargs):
         start = time.time()
         r = a(*args, **kwargs)
-        print(f'{a} --- {round(time.time() - start, n)}s')
+        print(f'{a} --- {round(time.time() - start, n)}s', flush=True)
         return r
     return wrapper

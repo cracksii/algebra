@@ -4,10 +4,15 @@ from math import isnan
 from numpy import linspace
 from watch import watch
 from random import shuffle
+from time import time
+from itertools import groupby
+
+import matplotlib.pyplot as plt
+
 
 MAX_ITERATIONS = 1000
-ACCURACY = 10
-DEBUG = False
+ACCURACY = 6
+DEBUG = True
 H = (1 / (10**(ACCURACY)))
 
 
@@ -148,10 +153,10 @@ def nn_derivative(f, vals, var, y):
             return None
     return derivative
 
-#@watch
+
 def nn_solve(f, vals, var):
     steps = []                  # Keeps track of past computations
-    num = 20
+    num = 50
 
     # Calculates a new x value for the next iteration
     def delta():
@@ -159,15 +164,17 @@ def nn_solve(f, vals, var):
         
         # Return better x approximation based on y difference and derivative at x
         return -steps[-1].y / steps[-1].derivative
-
+    
+    #sta = time()
     while num > 0:
+        num -= 1
+        #print(time() - sta, len(steps))
         y = f.compute(vals)
 
         # Checks if x is inside the domain of definition
         if isinstance(y, float) and isnan(y):
             vals[var] += 1
             continue
-        
         derivative = nn_derivative(f, vals, var, y)
         if derivative == None:
             return float("nan"), num
@@ -184,7 +191,6 @@ def nn_solve(f, vals, var):
             vals[var] += d
             steps[-1].delta = d
 
-        num -= 1
     if num != 0:
         minimum = min([abs(_.y) for _ in steps])
         for iteration in steps:
@@ -193,7 +199,7 @@ def nn_solve(f, vals, var):
 
     return float("nan"), num
 
-#@watch
+
 def solve_multi(term1, term2, start_vals=None):
     term1 = Term(term1).clone()
     term2 = Term(term2).clone()
@@ -206,26 +212,24 @@ def solve_multi(term1, term2, start_vals=None):
     shuffle(variables)
 
     f = term1 - term2
-    iterations = 50
-    if DEBUG:
-        print(vals, f.compute(vals))
-    while True:
+
+    iterations = 5
+    while iterations > 0:
         iterations -= 1
         num = MAX_ITERATIONS
-        for var in variables:        
-            vals[var], num = nn_solve(f, vals, var)
-            if DEBUG:
-                print(var.selfname(), vals, f.compute(vals))
+        for var in variables:
+            new_val, num = nn_solve(f, vals, var)
+            vals[var] = new_val
             if num > 0:
                 break
-        if num > 0 or iterations == 0:
+        if num > 0:
             break
+    #print(iterations, num, f, start_vals, vals, flush=True, end="\n\n")
     if iterations == 0 or num == 0:
         return None
     return vals
 
 
-@watch
 def multi_solutions(term1, term2, start, width=10, lines=200):
     solved = solve_multi(term1, term2, start)
     solutions = [solved]
@@ -267,73 +271,146 @@ def multi_solutions(term1, term2, start, width=10, lines=200):
     return solutions
 
 
-def equation_system(eqs): # eqs is a list of tuples with two terms representing the left and right side of an equations
-    TOLERANCE = 1e-5
+class HashableDict(dict):
+    def __hash__(self):
+        # print(sum([hash(_) for _ in self._keys]) + sum([hash(_) for _ in self._values]))
+        return hash(str(self.keys()) + str(self.values()))
+    
+class HashableSet(frozenset):
+    def __repr__(self):
+        out = "<"
+        for i in self:
+            out += f"{i}, "
+        return out[:-2] + ">"
+
+@watch
+def equation_system(*eqs):
+    TOLERANCE = 1 / (10 ** ACCURACY)
     from threaded_grid import threaded_solutions
+    
     for i in eqs:
         assert len(i) == 2
         i = (Term(i[0]), Term(i[1]))
 
     valid_solutions = []
-    start = None
     width = 1000
     lines = 100
-    while len(valid_solutions) == 0:
-        solutions = [[] for _ in eqs]    
-        for idx, eq in enumerate(eqs):
-            solutions[idx] = threaded_solutions(eq[0], eq[1], start, width, lines)
+    search_values = [None]
+    max_iterations = MAX_ITERATIONS
+
+    while len(valid_solutions) == 0:    # It should be "while len(potential_solutions) > 0 (ensures all potential solutions are found) or potential_solutions == None (startcase)"
+        max_iterations -= 1
+        if max_iterations == 0:
+            break
         
-        # print(len(solutions), [len(_) for _ in solutions if _])
-        variables = []
-        for i in solutions:
-            for k in i[0].keys():
-                if k not in variables:
-                    variables.append(k)
-        
-        minimum_delta = {k: float("inf") for k in variables}
+        for sidx, search in enumerate(search_values):
+            solutions = [[] for _ in eqs]    
+            for idx, eq in enumerate(eqs):
+                solutions[idx] = threaded_solutions(eq[0], eq[1], search, width, lines)
+                if len(solutions[idx]) == 0:
+                    print(f"The system cannot be solved due to equation: {eq}, which has no (real) solutions")
+                    return
+            
+            unique_solutions_set = set()
+            filtered_solutions = []
+            for sol_list in solutions:
+                unique_sol_list = []
+                for sol in sol_list:
+                    rounded_sol = frozenset({k: round(sol[k], ACCURACY - 1) for k in sol}.items())
+                    if rounded_sol not in unique_solutions_set:
+                        unique_solutions_set.add(rounded_sol)
+                        dct = HashableDict()
+                        dct.update(sol.items())
+                        unique_sol_list.append(dct)
+                filtered_solutions.append(unique_sol_list)
+            print("original / filtered", [len(_) for _ in solutions if _], [len(_) for _ in filtered_solutions if _], end="\n\n\n", flush=True)
+            solutions = filtered_solutions
 
-        print(f"Last solutions {solutions[0][0]} {solutions[0][int(len(solutions[0])/2)]} {solutions[0][-1]}")
-        print("\n")
-        for idx, solution_set1 in enumerate(solutions):
-            for idx2, solution_set2 in enumerate(solutions):
-                if idx == idx2:
-                    continue
+            variables = list({k for sol in solutions for s in sol for k in s.keys()})
+            minimum_delta = {k: float("inf") for k in variables}
+            deltas = HashableDict()
+            for idx, solution_set1 in enumerate(solutions):
+                for idx2, solution_set2 in enumerate(solutions):
+                    if idx == idx2:
+                        continue
+                    
+                    for s1 in solution_set1:
+                        for s2 in solution_set2:
+                            if s1 == s2:
+                                valid_solutions.append((s1, s2))
+                                continue
+                            sol_set = HashableSet({s1, s2})
+                            if sol_set not in deltas.keys():
+                                deltas[sol_set] = 0
+                            keys = [_ for _ in s1.keys() if _ in s2.keys()]
+                            valid = True
+                            for idx, k in enumerate(keys):
+                                deltas[sol_set] += abs(s1[k] - s2[k])
+                                #print(abs(s1[k] - s2[k]), (s1, s2))
+                                if abs(s1[k] - s2[k]) < minimum_delta[k]:
+                                    minimum_delta[k] = abs(s1[k] - s2[k])
+                                    if not search_values[sidx]:
+                                        search_values[sidx] = {}
+                                    search_values[sidx][k] = (s1[k] + s2[k]) / 2
+                                if abs(s1[k] - s2[k]) >= TOLERANCE:
+                                    valid = False
+                            if valid:
+                                valid_solutions.append((s1, s2))
 
-                for s1 in solution_set1:
-                    for s2 in solution_set2:
-                        if s1 == s2:
-                            valid_solutions.append((s1, s2))
-                        
-                        keys = [_ for _ in s1.keys() if _ in s2.keys()]
-                        valid = True
-                        for k in keys:
-                            if abs(s1[k] - s2[k]) < minimum_delta[k]:
-                                minimum_delta[k] = abs(s1[k]-s2[k])
-                                if not start:
-                                    start = {}
-                                start[k] = (s1[k] + s2[k]) / 2
-                                #print(k, s1[k] - s2[k], start, s1, s2)
+            if DEBUG:
+                ax = plt.axes()
+                for k, v in deltas.items():
+                    if abs(v) > 5:
+                        continue
+                    for i in list(k):
+                        if Variable.getbyname("x") in i.keys():
+                            ax.scatter(abs(i[Variable.getbyname("x")] + i[Variable.getbyname("y")]), v)
+                plt.show()
 
 
-                            if abs(s1[k] - s2[k]) >= TOLERANCE:
-                                valid = False
-                                break
-                        if valid:
-                            valid_solutions.append((s1, s2))
+            # Calculate potential solutions and identify doubles 
+            delta_vals = sorted(deltas.values())
+            top_solutions = [(i, list(deltas.keys())[list(deltas.values()).index(i)]) for i in delta_vals[:10]]
+            rm = []
+            for idx1, (delta1, s1) in enumerate(top_solutions):
+                for idx2, (delta2, s2) in enumerate(top_solutions):
+                    if idx1 == idx2:
+                        continue
+                    if abs(delta1 - delta2) < TOLERANCE and max(delta1, delta2) not in rm:
+                        rm.append(max(delta1, delta2))
+
+            for r in rm:
+                top_solutions.remove([_ for _ in top_solutions if _[0] == r][0])
+
+            for i in top_solutions:
+                print(i)
+            
+            for idx, (delta, sol) in enumerate(top_solutions):
+                pass
+
+            return
 
         if len(valid_solutions) == 0:
             width /= 10
     
+    unique_solutions = set()
     return_solutions = []
-    for v in valid_solutions:
-        return_solutions.append([])
-        for i in v:
-            cpy = {}
-            for k in i.keys():
-                cpy[k] = round(i[k], ACCURACY)
-            return_solutions[-1].append(cpy)
-
     
-    for i in return_solutions:
-        print(i)
+    for v in valid_solutions:
+        rounded_pair = tuple(
+            frozenset({k: round(v[i][k], ACCURACY - 3) for k in v[i]}.items())
+            for i in range(len(v))
+        )
+        sorted_pair = tuple(sorted(rounded_pair))
+        
+        if sorted_pair not in unique_solutions:
+            unique_solutions.add(sorted_pair)
+            return_solutions.append([{k: v for k, v in pair} for pair in tuple(
+                frozenset({k: round(v[i][k], ACCURACY - 1) for k in v[i]}.items())
+                for i in range(len(v))
+            )])
+
+    for sol in return_solutions:
+        print(sol)
+    
     return return_solutions

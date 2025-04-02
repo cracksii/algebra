@@ -1,4 +1,5 @@
 from term import Term
+from gc import get_objects
 
 class Variable:
     variable_dict = {}
@@ -14,6 +15,15 @@ class Variable:
             variable = id(variable)
         return cls.variable_dict[variable]
     
+    @classmethod
+    def getbyname(cls, name):
+        if name in Variable.variable_dict.values():
+            vid = list(Variable.variable_dict.keys())[list(Variable.variable_dict.values()).index(name)]
+            for obj in get_objects():
+                if id(obj) == vid:
+                   return obj
+        return None
+
     def selfname(self):
         return self.variable_dict[id(self)]
     

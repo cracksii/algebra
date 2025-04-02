@@ -18,12 +18,13 @@ class Thr(Thread):
         #print(f"{self.idx} started")
         for pt in self.grid_points:
             solution = solve_multi(self.t1, self.t2, pt)
+            #print(f"{self.idx} solved pt {self.grid_points.index(pt)}/{len(self.grid_points)}")
             if not solution:
                 continue
             if solution not in self.solutions:
                 self.solutions.append(solution)
         #print(f"{self.idx} finished")
-    
+
     def join(self):
         super().join()
         #print(f"{self.idx} joined")
@@ -31,7 +32,7 @@ class Thr(Thread):
 
 def threaded_solutions(term1, term2, start, width=10, lines=400):
     solved = solve_multi(term1, term2, start)
-
+    
     solutions = [solved]
     grid = []
     if not start:
@@ -48,8 +49,8 @@ def threaded_solutions(term1, term2, start, width=10, lines=400):
     idxs = [0 for _ in range(len(solved))]
 
     grid_points = []
-    while True:
-        vals = {}
+    while True:         # Generate the grid points for the threads --- Better approach: Calculate total number of points: t_n_p = lines ^ numVariables
+        vals = {}       #                                              Generate t_n_p / num_threads points - dispatch thread with those points - continue with next thread
         for i, v in enumerate(idxs):
             vals[list(solved.keys())[i]] = grid[i][v]
 
@@ -72,10 +73,9 @@ def threaded_solutions(term1, term2, start, width=10, lines=400):
                 new_idxs.append(i)
             idxs = [_ for _ in reversed(new_idxs)]
 
-    num_thr = 8 
+    num_thr = 8
     thread_points = []
     length = len(grid_points)
-    #print(length, solved, term1, term2)
     for i in range(num_thr):
         if i == num_thr - 1:
             thread_points.append(grid_points)
@@ -85,6 +85,7 @@ def threaded_solutions(term1, term2, start, width=10, lines=400):
         thread_points.append(grid_points[:idx])
         grid_points = grid_points[idx:]
 
+    print(length, [len(_) for _ in thread_points])
     threads = []
     for idx, i in enumerate(thread_points):
         t = Thr(i, idx, term1, term2)

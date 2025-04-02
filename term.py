@@ -88,7 +88,7 @@ class Term:
                 if isinstance(val, Variable):
                     output += f" {op} {val.selfname()})"
                 elif isinstance(val, Term):
-                    output += f" {op} ({str(val).strip().replace("|", "")}"
+                    output += f" {op} ({str(val).strip().replace('|', '')}"
                 else:
                     output += f" {op} {val})"
 
