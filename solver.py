@@ -203,15 +203,15 @@ def nn_solve(f, vals, var):
 def solve_multi(term1, term2, start_vals=None):
     term1 = Term(term1).clone()
     term2 = Term(term2).clone()
-    variables = [_ for _ in term1.variables] + [_ for _ in term2.variables if _ not in term1.variables]
+    f = term1 - term2
+    variables = f.variables
+
     if not start_vals:
         start_vals = {a: 1 for a in variables}
-    
+
     start_vals = {a: b for a, b in start_vals.items() if a in variables}
     vals = start_vals.copy()
     shuffle(variables)
-
-    f = term1 - term2
 
     iterations = 5
     while iterations > 0:
@@ -279,9 +279,37 @@ class HashableDict(dict):
 class HashableSet(frozenset):
     def __repr__(self):
         out = "<"
-        for i in self:
+        solutions = self.list()
+        for i in solutions:
+            i.print_term = False
             out += f"{i}, "
+            i.print_term = True
         return out[:-2] + ">"
+    
+    def __getitem__(self, item):
+        return self.list()[item]
+
+    def list(self):
+        return list(sorted(self, key=lambda x: x.term))
+
+    def same_vars(self):
+        variables = []
+        var_refs = []
+        for i in self.list():
+            variables.append(i.vars())
+            for k in variables[-1]:
+                if k not in var_refs:
+                    var_refs.append(k)
+    
+        rm = []
+        for var in var_refs:
+            for eq_vars in variables:
+                if var not in eq_vars:
+                    rm.append(var)
+                    break
+        for i in rm:
+            var_refs.remove(i)
+        return var_refs
 
 @watch
 def equation_system(*eqs):
@@ -345,7 +373,8 @@ def equation_system(*eqs):
                             keys = [_ for _ in s1.keys() if _ in s2.keys()]
                             valid = True
                             for idx, k in enumerate(keys):
-                                deltas[sol_set] += abs(s1[k] - s2[k])
+                                S_k = max(1, 0.5 * (abs(s1[k]) + abs(s2[k]))) 
+                                deltas[sol_set] += abs(s1[k] - s2[k]) / S_k  
                                 #print(abs(s1[k] - s2[k]), (s1, s2))
                                 if abs(s1[k] - s2[k]) < minimum_delta[k]:
                                     minimum_delta[k] = abs(s1[k] - s2[k])
@@ -357,10 +386,10 @@ def equation_system(*eqs):
                             if valid:
                                 valid_solutions.append((s1, s2))
 
-            if DEBUG:
+            if False:
                 ax = plt.axes()
                 for k, v in deltas.items():
-                    if abs(v) > 5:
+                    if abs(v) > 3.84:
                         continue
                     for i in list(k):
                         if Variable.getbyname("x") in i.keys():
@@ -382,12 +411,20 @@ def equation_system(*eqs):
             for r in rm:
                 top_solutions.remove([_ for _ in top_solutions if _[0] == r][0])
 
-            for i in top_solutions:
-                print(i)
-            
-            for idx, (delta, sol) in enumerate(top_solutions):
-                pass
 
+            
+            if True:
+                varx = Variable.getbyname("x")
+                vary = Variable.getbyname("y")
+                for st in solutions:
+                    ax = plt.axes()
+                    for solution in st:
+                        ax.scatter(solution[varx], solution[vary])
+                    print(len(st))
+                    plt.show()
+            
+            for k in top_solutions:
+                print(k)
             return
 
         if len(valid_solutions) == 0:
@@ -414,3 +451,63 @@ def equation_system(*eqs):
         print(sol)
     
     return return_solutions
+
+
+def calculate_solutions(eqs):
+    from threaded_grid import threaded_solutions
+    from math import sqrt
+
+    all_solutions = []
+    for idx, (eq1, eq2) in enumerate(eqs):
+        solutions = threaded_solutions(eq1, eq2, None, 1000, 100)
+        for i in range(len(solutions)):
+            solutions[i].term = idx
+
+        if len(solutions) == 0:
+            print("Not solvable")
+            return None
+
+        solutions = sorted(solutions, key=lambda x: sqrt(sum([_**2 for _ in x.values()])))
+        all_solutions.append(solutions)
+    return all_solutions
+
+
+@watch
+def equation_system2(*eqs):
+    """
+    Solve a system of given equations
+
+    :param *eqs The set of equations to solve (left_side, right_side), (left_side2, right_side2)...
+    """
+    from itertools import product
+    from threaded_grid import Solution
+
+    all_solutions = calculate_solutions(eqs)
+    print([len(_) for _ in all_solutions])
+
+    # Calculate delta values for potential solutions of the system
+    for idx1 in range(len(all_solutions)-1):                            # This ensures every solutions set is paired with every other only ONCE and never with itself
+        print(idx1, idx1+1)
+        for idx2 in range(idx1 + 1, len(all_solutions)):
+            if idx1 == idx2:
+                continue
+            deltas = {}
+            for s1, s2 in product(all_solutions[idx1], all_solutions[idx2]):
+                mutual_keys = [_ for _ in s1.keys() if _ in s2.keys()]
+                if len(mutual_keys) == 0:                               # Cannot solve independent equations
+                    break
+                key = HashableSet({s1, s2})                             # Key is a set, because its irrelevant which equations is s1 and which is s2
+
+                deltas[key] = 0
+                for k in mutual_keys:
+                    delta = abs(s1[k] - s2[k])                          # Probably need to adjust delta calculation
+                    deltas[key] += delta
+
+    best_deltas = {_: list(deltas.keys())[list(deltas.values()).index(_)] for _ in sorted(deltas.values())[:10]}
+    items = list(best_deltas.items())
+    
+    for k, v in best_deltas.items():
+        print(k, v)
+
+    # 
+

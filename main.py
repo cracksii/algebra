@@ -24,7 +24,7 @@ def main():
     #print(solve_multi(3*x, 0, start_vals={x: 1, y:1}))
     # print(threaded_solutions(1-y, 2-x, {x:10, y:10}))
     #equation_system([(3*x, z), (1-z, 2*y), (z, 3)])
-    equation_system((y, 4 * sin(x)), (y, 3))
+    equation_system2((y, 3*sin(180*x)), (y, 3))
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@ from math import pi, sin, cos, tan, asin, acos, atan
 class Term:
     def __init__(self, start=None):
         if isinstance(start, Term):
-            self.instructions = start.instructions
-            self.variables = start.variables
+            self.instructions = start.instructions.copy()
+            self.variables = start.variables.copy()
             return
 
         from variable import Variable

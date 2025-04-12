@@ -30,11 +30,35 @@ class Thr(Thread):
         #print(f"{self.idx} joined")
         return self.solutions
 
+
+class Solution(dict):
+    print_term = True
+    term = None
+    
+    def __hash__(self):
+        return hash(str(self.keys()) + str(self.values()))
+    
+    def vars(self):
+        return sorted([_ for _ in self.keys() if isinstance(_, Variable)], key=lambda x: x.selfname())
+    
+    def __repr__(self):
+        out = ""
+        for v in self.vars():
+            out += f"{v}:{self[v]}, "
+        out = out[:-2] + "}"
+        if self.term is not None and self.print_term:
+            return "{idx: " + str(self.term) + ", " + out
+        else:
+            return "{" + out
+
+
 def threaded_solutions(term1, term2, start, width=10, lines=400):
     solved = solve_multi(term1, term2, start)
     
     solutions = [solved]
     grid = []
+    if isinstance(start, float) or isinstance(start, int):
+        start = {_: start for _ in term1.variables + [_ for _ in term2.variables if _ not in term1.variables]}
     if not start:
         start = {}
     for k in solved:
@@ -93,10 +117,22 @@ def threaded_solutions(term1, term2, start, width=10, lines=400):
         t.start()
 
     solutions = []
+    rounded_solutions = []
     for t in threads:
         thr_solutions = t.join()
         for i in thr_solutions:
-            if i not in solutions:
-                solutions.append(i)
+            r = round_solution(i)
+            if r not in rounded_solutions:
+                rounded_solutions.append(r)
+                solutions.append(round_solution(i, ACCURACY, Term(term1) - Term(term2)))
     
     return solutions
+
+def round_solution(solution, round_accuracy=ACCURACY - 2, term=None):
+    keys = list(solution.keys())
+    rounded = Solution()
+    if term:
+        rounded.term = term
+    for k in keys:
+        rounded[k] = round(solution[k], round_accuracy)
+    return rounded
